@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DarkChat — lokální prototyp</title>
+  <meta name="description" content="DarkChat — offline prototyp chatu s kanály, DM a profily (localStorage)." />
+  <style>
+    :root{
+      --bg:#07090b;
+      --panel:#0c1116;
+      --muted:#9aa6b2;
+      --text:#e6eef3;
+      --accent:#2ce07a;
+      --accent-2:#22c06a;
+      --danger:#ff6b6b;
+      --glass: rgba(255,255,255,0.02);
+      --radius:14px;
+      --card-shadow: 0 8px 28px rgba(2,6,12,.6);
+    }
+    *{box-sizing:border-box}
+    html,body,#app{height:100%;}
+    body{margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial; background:linear-gradient(180deg,var(--bg),#020405); color:var(--text); -webkit-font-smoothing:antialiased}
+
+    /* container */
+    #app{display:flex;align-items:center;justify-content:center;padding:20px}
+    .frame{width:min(1180px,98vw);height:min(820px,94vh);background:linear-gradient(180deg,var(--panel),#071018);border-radius:18px;display:grid;grid-template-columns:300px 1fr;overflow:hidden;box-shadow:var(--card-shadow);border:1px solid rgba(255,255,255,0.03)}
+
+    /* left sidebar */
+    .sidebar{padding:16px;display:flex;flex-direction:column;gap:12px;border-right:1px solid rgba(255,255,255,0.03)}
+    .brand{display:flex;align-items:center;gap:12px}
+    .logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:grid;place-items:center;font-weight:800;color:#03120a}
+    .brand h1{font-size:18px;margin:0}
+    .userinfo{display:flex;align-items:center;gap:10px;margin-top:6px}
+    .avatar{width:40px;height:40px;border-radius:8px;background:#0b1620;display:grid;place-items:center;font-weight:700;color:var(--accent)}
+    .smallmuted{font-size:12px;color:var(--muted)}
+
+    .search{margin-top:6px}
+    .input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:var(--text);outline:none}
+
+    .section{margin-top:6px}
+    .section h3{font-size:12px;text-transform:uppercase;color:var(--muted);margin:6px 0}
+    .list{display:flex;flex-direction:column;gap:6px;max-height:280px;overflow:auto;padding-right:6px}
+    .channel,.person{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px;cursor:pointer}
+    .channel:hover,.person:hover{background:rgba(255,255,255,0.02)}
+    .channel.active{background:linear-gradient(90deg, rgba(44,224,122,0.06), rgba(34,192,106,0.02));border-left:3px solid var(--accent);padding-left:7px}
+    .tag{font-size:12px;color:var(--muted)}
+
+    /* main area */
+    .main{display:grid;grid-template-rows:72px 1fr 84px}
+    .top{display:flex;align-items:center;justify-content:space-between;padding:16px;border-bottom:1px solid rgba(255,255,255,0.02)}
+    .topic{display:flex;gap:12px;align-items:center}
+    .topic h2{margin:0}
+    .controls{display:flex;gap:8px;align-items:center}
+    .iconbtn{background:transparent;border:1px solid rgba(255,255,255,0.03);padding:8px;border-radius:10px;cursor:pointer}
+
+    .messages{padding:18px;overflow:auto;background:linear-gradient(180deg,transparent, rgba(44,224,122,0.003));}
+    .msg{display:flex;gap:12px;padding:8px;border-radius:12px}
+    .msg.me{justify-content:flex-end}
+    .bubble{max-width:68%;padding:10px 14px;border-radius:12px;background:linear-gradient(180deg,#08121a,#071219);border:1px solid rgba(255,255,255,0.02)}
+    .bubble.me{background:linear-gradient(180deg, rgba(44,224,122,0.14), rgba(34,192,106,0.06));color:#03120a}
+    .meta{font-size:12px;color:var(--muted);margin-bottom:6px}
+
+    .composer{display:flex;gap:10px;align-items:center;padding:12px;border-top:1px solid rgba(255,255,255,0.02)}
+    .composer textarea{flex:1;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:var(--text);min-height:48px;max-height:160px;resize:none}
+    .send{background:linear-gradient(180deg,var(--accent),var(--accent-2));color:#03120a;border:none;padding:10px 14px;border-radius:12px;font-weight:700;cursor:pointer}
+
+    /* right profile panel */
+    .profile{width:320px;padding:18px;border-left:1px solid rgba(255,255,255,0.02);display:flex;flex-direction:column;gap:12px}
+    .profile .card{background:var(--glass);padding:12px;border-radius:12px}
+    .field{display:flex;flex-direction:column;gap:6px}
+    .small{font-size:13px;color:var(--muted)}
+
+    /* modal */
+    .overlay{position:fixed;inset:0;display:grid;place-items:center;background:linear-gradient(180deg,rgba(2,6,12,0.6),rgba(2,6,12,0.85));}
+    .modal{width:min(720px,94vw);background:linear-gradient(180deg,#0b1116,#071018);padding:20px;border-radius:12px;border:1px solid rgba(255,255,255,0.03)}
+
+    /* responsive */
+    @media (max-width:960px){.frame{grid-template-columns:1fr} .profile{display:none} .sidebar{display:flex}} 
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="frame" id="frame">
+      <div class="sidebar">
+        <div class="brand">
+          <div class="logo">DC</div>
+          <div>
+            <h1>DarkChat</h1>
+            <div class="smallmuted">lokální prototyp</div>
+          </div>
+        </div>
+
+        <div id="userBox" class="userinfo">
+          <!-- rendered -->
+        </div>
+
+        <div class="search"><input id="globalSearch" class="input" placeholder="Vyhledat uživatele / kanál" /></div>
+
+        <div class="section">
+          <h3>Kanály</h3>
+          <div class="list" id="channelsList"></div>
+          <div style="margin-top:8px;display:flex;gap:8px"><input id="newChannel" class="input" placeholder="+ vytvořit kanál" /><button id="createChannel" class="iconbtn">Vytvořit</button></div>
+        </div>
+
+        <div class="section">
+          <h3>Direct messages</h3>
+          <div class="list" id="dmList"></div>
+        </div>
+
+        <div style="margin-top:auto;display:flex;gap:8px;align-items:center;justify-content:space-between">
+          <div class="smallmuted">Vývojový prototyp • data v localStorage</div>
+          <button id="openAuth" class="iconbtn">Přihlásit</button>
+        </div>
+      </div>
+
+      <div class="main">
+        <div class="top">
+          <div class="topic">
+            <div id="topicTitle"><h2># general</h2><div class="smallmuted">veřejný kanál</div></div>
+          </div>
+          <div class="controls">
+            <button id="profileBtn" class="iconbtn">Profil</button>
+            <button id="logoutBtn" class="iconbtn">Odhlásit</button>
+          </div>
+        </div>
+
+        <div class="messages" id="messages"></div>
+
+        <div class="composer">
+          <textarea id="composer" placeholder="Napiš zprávu… (Ctrl+Enter pro odeslání)"></textarea>
+          <button id="sendBtn" class="send">Odeslat</button>
+        </div>
+      </div>
+
+      <div class="profile" id="profilePanel">
+        <div class="card">
+          <div style="display:flex;gap:12px;align-items:center"><div id="profileAvatar" class="avatar">U</div><div><div id="profileName" style="font-weight:700">Neznámý</div><div class="smallmuted" id="profileSince">Neregistrován</div></div></div>
+        </div>
+        <div class="card">
+          <div class="field"><label class="small">Uživatelské jméno</label><input id="pfUsername" class="input" /></div>
+          <div class="field"><label class="small">Zobrazované jméno</label><input id="pfDisplay" class="input" /></div>
+          <div class="field"><label class="small">Bio</label><textarea id="pfBio" class="input" style="min-height:80px"></textarea></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end"><button id="saveProfile" class="iconbtn">Uložit</button></div>
+        </div>
+
+        <div class="card" style="margin-top:auto">
+          <div class="smallmuted">Rychlé akce</div>
+          <div style="display:flex;gap:8px;margin-top:8px"><button id="clearData" class="iconbtn">Vymazat data</button><button id="exportData" class="iconbtn">Export</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- modals injected here -->
+  <div id="modals"></div>
+
+  <script>
+    // DarkChat v2 — offline single-file app
+    // Data model saved in localStorage under key 'darkchat_v2'
+
+    const STORAGE_KEY = 'darkchat_v2';
+
+    // --- utils ---
+    const $ = s => document.querySelector(s);
+    const $$ = s => Array.from(document.querySelectorAll(s));
+    const uid = () => Math.random().toString(36).slice(2,10);
+    const now = () => new Date().toISOString();
+    const fmt = iso => new Date(iso).toLocaleString();
+
+    // simple async sha256 for passwords
+    async function sha256(str){
+      const enc = new TextEncoder();
+      const data = enc.encode(str);
+      const hash = await crypto.subtle.digest('SHA-256', data);
+      return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    }
+
+    // --- storage ---
+    function load(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null }catch{ return null } }
+    function save(state){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+    // seed data
+    function seed(){
+      const system = { id: uid(), username: 'system', display: 'System', hash:'', createdAt: now(), bio:'Vítej v DarkChatu! Založ účet a napiš.' };
+      return {
+        users: [system],
+        session: { userId: null },
+        channels: [{id:uid(),name:'general',createdAt:now()},{id:uid(),name:'random',createdAt:now()}],
+        messages: [ // type: channel/dm
+          {id:uid(),type:'channel',channel:'general',from:'system',text:'Ahoj! Toto je kanál general.',ts:now()},
+        ]
+      }
+    }
+
+    let state = load() || seed();
+
+    function currentUser(){ return state.users.find(u=>u.id===state.session.userId) || null }
+
+    // --- rendering ---
+    function renderAll(){ renderUserBox(); renderLists(); renderTopic(); renderMessages(); renderProfilePanel(); }
+
+    function renderUserBox(){
+      const box = $('#userBox');
+      const user = currentUser();
+      if(!user){ box.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px"><div class="smallmuted">Nejsi přihlášen</div><div style="display:flex;gap:8px"><button id=loginOpen class="iconbtn">Přihlásit</button><button id=regOpen class="iconbtn">Registrovat</button></div></div>`; $('#openAuth').textContent = 'Přihlásit'; setTimeout(()=>{$('#loginOpen')?.addEventListener('click', openLogin); $('#regOpen')?.addEventListener('click', openRegister); $('#openAuth')?.addEventListener('click', openLogin);},10); }
+      else { box.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><div class="avatar">${(user.display||user.username)[0].toUpperCase()}</div><div><div style="font-weight:700">${user.display||user.username}</div><div class="smallmuted">@${user.username}</div></div></div>`; $('#openAuth').textContent = 'Uživatel'; $('#openAuth').onclick = openProfileModal; }
+    }
+
+    function renderLists(filter=''){
+      const channelsEl = $('#channelsList'); channelsEl.innerHTML='';
+      state.channels.sort((a,b)=>a.name.localeCompare(b.name)).forEach(ch=>{
+        const el = document.createElement('div'); el.className='channel'; el.dataset.id=ch.id; el.innerHTML=`<div style="width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,0.02);display:grid;place-items:center">#</div><div style="flex:1"><div style="font-weight:600">${ch.name}</div><div class="tag">${ch.createdAt?fmt(ch.createdAt):''}</div></div>`;
+        el.onclick = ()=>{ setActiveChannel(ch.name); }
+        channelsEl.appendChild(el);
+      });
+
+      const dmEl = $('#dmList'); dmEl.innerHTML='';
+      const me = currentUser();
+      const others = state.users.filter(u=>!me || u.id!==me.id).sort((a,b)=> (a.display||a.username).localeCompare(b.display||b.username));
+      others.forEach(u=>{
+        const el = document.createElement('div'); el.className='person'; el.dataset.id=u.id; el.innerHTML=`<div class="avatar">${(u.display||u.username)[0].toUpperCase()}</div><div style="flex:1"><div style="font-weight:600">${u.display||u.username}</div><div class="tag">@${u.username}</div></div>`;
+        el.onclick = ()=>{ openDM(u.username); }
+        dmEl.appendChild(el);
+      });
+
+      // highlight active channel
+      $$('.channel').forEach(n=> n.classList.toggle('active', (n.dataset.id===active.channelId)) );
+    }
+
+    // --- active view state ---
+    let active = { kind:'channel', channelName:'general', channelId: state.channels[0]?.id || null, dmWith: null };
+
+    function setActiveChannel(name){ active.kind='channel'; active.channelName = name; const ch = state.channels.find(c=>c.name===name); active.channelId = ch?.id || null; active.dmWith = null; renderAll(); }
+    function openDM(username){ active.kind='dm'; active.dmWith = username; renderAll(); }
+
+    function renderTopic(){ const el = $('#topicTitle'); if(active.kind==='channel'){ el.innerHTML = `<h2># ${active.channelName}</h2><div class="smallmuted">veřejný kanál</div>` } else { el.innerHTML = `<h2>DM • ${active.dmWith}</h2><div class="smallmuted">soukr. konverzace</div>` } }
+
+    function renderMessages(){
+      const container = $('#messages'); container.innerHTML='';
+      let msgs = [];
+      if(active.kind==='channel') msgs = state.messages.filter(m=>m.type==='channel' && m.channel===active.channelName);
+      else msgs = state.messages.filter(m=>m.type==='dm' && m.partner === dmId(getMyName(), active.dmWith));
+
+      msgs.sort((a,b)=> new Date(a.ts)-new Date(b.ts));
+      msgs.forEach(m=>{
+        const isMe = m.from === getMyName();
+        const wrapper = document.createElement('div'); wrapper.className = 'msg' + (isMe? ' me':'');
+        const bubble = document.createElement('div'); bubble.className = 'bubble' + (isMe? ' me':'');
+        bubble.innerHTML = `<div class="meta"><strong>@${m.from}</strong> • ${fmt(m.ts)}</div><div>${escape(m.text)}</div>`;
+        wrapper.appendChild(isMe? bubble : createAvatar(m.from));
+        if(isMe) wrapper.appendChild(bubble); else wrapper.appendChild(bubble);
+        container.appendChild(wrapper);
+      });
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function createAvatar(username){ const el = document.createElement('div'); el.style.width='48px'; el.style.height='48px'; el.style.display='grid'; el.style.placeItems='center'; el.style.borderRadius='8px'; el.style.background='rgba(255,255,255,0.02)'; el.style.marginRight='8px'; el.innerHTML = `<div style="font-weight:700">${(username||'?')[0].toUpperCase()}</div>`; return el; }
+
+    function escape(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+
+    function dmId(a,b){ return [a,b].sort().join(':') }
+    function getMyName(){ return currentUser()?.username || null }
+
+    // --- actions ---
+    async function registerUser(username, password, display, bio){
+      username = (username||'').trim(); if(!username) return {ok:false,error:'Uživatelské jméno je povinné.'};
+      if(state.users.some(u=>u.username.toLowerCase()===username.toLowerCase())) return {ok:false,error:'Uživatel již existuje.'};
+      const hash = await sha256(password||'');
+      const user = { id:uid(), username, display: display||username, hash, bio:bio||'', createdAt: now() };
+      state.users.push(user); state.session.userId = user.id; save(state); renderAll(); return {ok:true};
+    }
+
+    async function loginUser(username, password){ username = (username||'').trim(); if(!username) return {ok:false,error:'Zadej uživatelské jméno.'}; const user = state.users.find(u=>u.username.toLowerCase()===username.toLowerCase()); if(!user) return {ok:false,error:'Uživatel neexistuje.'}; const hash = await sha256(password||''); if(user.hash && user.hash !== hash) return {ok:false,error:'Špatné heslo.'}; // allow empty-hash accounts only without password
+      if(!user.hash && password) return {ok:false,error:'Tento účet nelze přihlásit heslem.'}; state.session.userId = user.id; save(state); renderAll(); return {ok:true}; }
+
+    function logout(){ state.session.userId = null; save(state); renderAll(); }
+
+    function createChannel(name){ name = (name||'').trim(); if(!name) return {ok:false,error:'Název kanálu je prázdný.'}; if(state.channels.some(c=>c.name.toLowerCase()===name.toLowerCase())) return {ok:false,error:'Kanál již existuje.'}; const ch = {id:uid(),name,createdAt:now()}; state.channels.push(ch); save(state); renderAll(); return {ok:true}; }
+
+    function sendMessage(text){ text = (text||'').trim(); if(!text) return; const me = getMyName(); if(!me) { alert('Musíš být přihlášen'); return }
+      if(active.kind==='channel'){ state.messages.push({id:uid(),type:'channel',channel:active.channelName,from:me,text,ts:now()}); }
+      else { const partner = active.dmWith; state.messages.push({id:uid(),type:'dm',partner:dmId(me,partner),from:me,to:partner,text,ts:now()}); }
+      save(state); renderMessages(); $('#composer').value=''; }
+
+    // --- profile ---
+    function renderProfilePanel(){ const me = currentUser(); $('#profileName').textContent = me ? (me.display||me.username) : 'Neznámý'; $('#profileSince').textContent = me ? `Registrován ${fmt(me.createdAt)}` : 'Neregistrován'; $('#profileAvatar').textContent = me ? (me.display||me.username)[0].toUpperCase() : 'U'; $('#pfUsername').value = me? me.username : ''; $('#pfDisplay').value = me? me.display:''; $('#pfBio').value = me? me.bio:''; }
+
+    async function saveProfile(){ const me = currentUser(); if(!me) return alert('Přihlaš se'); const display = $('#pfDisplay').value.trim(); const bio = $('#pfBio').value.trim(); me.display = display || me.username; me.bio = bio; save(state); renderAll(); alert('Profil uložen'); }
+
+    // --- modals ---
+    function openModal(html){ $('#modals').innerHTML = `<div class="overlay"><div class="modal">${html}</div></div>`; }
+    function closeModal(){ $('#modals').innerHTML=''; }
+
+    // login/register modals
+    function openLogin(){ openModal(`
+      <h2>Přihlášení</h2>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+        <input id="modalLoginUser" class="input" placeholder="Uživatelské jméno" />
+        <input id="modalLoginPass" class="input" placeholder="Heslo" type="password" />
+        <div style="display:flex;gap:8px;justify-content:flex-end"><button id="modalLoginCancel" class="iconbtn">Zpět</button><button id="modalLoginOk" class="iconbtn">Přihlásit</button></div>
+        <div id="modalLoginError" class="smallmuted"></div>
+      </div>
+    `);
+      setTimeout(()=>{
+        $('#modalLoginCancel').onclick = closeModal;
+        $('#modalLoginOk').onclick = async ()=>{
+          const u = $('#modalLoginUser').value; const p = $('#modalLoginPass').value; const res = await loginUser(u,p); if(!res.ok) { $('#modalLoginError').textContent = res.error; } else { closeModal(); }
+        }
+      },10);
+    }
+
+    function openRegister(){ openModal(`
+      <h2>Registrovat nový účet</h2>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+        <input id="modalRegUser" class="input" placeholder="Uživatelské jméno (bez diakritiky)" />
+        <input id="modalRegPass" class="input" placeholder="Heslo" type="password" />
+        <input id="modalRegDisplay" class="input" placeholder="Zobrazované jméno (volitelné)" />
+        <textarea id="modalRegBio" class="input" placeholder="Krátké bio (volitelné)"></textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end"><button id="modalRegCancel" class="iconbtn">Zpět</button><button id="modalRegOk" class="iconbtn">Registrovat</button></div>
+        <div id="modalRegError" class="smallmuted"></div>
+      </div>
+    `);
+      setTimeout(()=>{
+        $('#modalRegCancel').onclick = closeModal;
+        $('#modalRegOk').onclick = async ()=>{
+          const u = $('#modalRegUser').value; const p = $('#modalRegPass').value; const d = $('#modalRegDisplay').value; const b = $('#modalRegBio').value; const res = await registerUser(u,p,d,b); if(!res.ok) $('#modalRegError').textContent = res.error; else closeModal();
+        }
+      },10);
+    }
+
+    function openProfileModal(){ const me = currentUser(); if(!me) return openLogin(); openModal(`
+      <h2>Účet</h2>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+        <div class="smallmuted">@${me.username}</div>
+        <input id="modalPfDisplay" class="input" value="${me.display||''}" placeholder="Zobrazované jméno" />
+        <textarea id="modalPfBio" class="input" placeholder="Bio">${me.bio||''}</textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end"><button id="modalPfCancel" class="iconbtn">Zpět</button><button id="modalPfSave" class="iconbtn">Uložit</button></div>
+      </div>
+    `);
+      setTimeout(()=>{ $('#modalPfCancel').onclick = closeModal; $('#modalPfSave').onclick = ()=>{ me.display = $('#modalPfDisplay').value.trim() || me.username; me.bio = $('#modalPfBio').value.trim(); save(state); renderAll(); closeModal(); } },10);
+    }
+
+    // export / clear
+    function exportData(){ const data = JSON.stringify(state, null, 2); const blob = new Blob([data],{type:'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'darkchat_export.json'; a.click(); URL.revokeObjectURL(url); }
+    function clearData(){ if(confirm('Opravdu vymazat všechna data?')){ localStorage.removeItem(STORAGE_KEY); state = seed(); save(state); active = {kind:'channel',channelName:'general',channelId:state.channels[0]?.id||null,dmWith:null}; renderAll(); }}
+
+    // --- helpers / events ---
+    function wire(){
+      $('#createChannel').onclick = ()=>{ const v = $('#newChannel').value.trim(); if(!v) return alert('Zadej název kanálu'); const r = createChannel(v); if(!r.ok) alert(r.error); else $('#newChannel').value=''; }
+      $('#sendBtn').onclick = ()=> sendMessage($('#composer').value);
+      $('#composer').addEventListener('keydown', e=>{ if((e.ctrlKey||e.metaKey) && e.key==='Enter'){ e.preventDefault(); sendMessage($('#composer').value); } });
+      $('#logoutBtn').onclick = ()=>{ logout(); }
+      $('#profileBtn').onclick = ()=> openProfileModal();
+      $('#saveProfile').onclick = saveProfile;
+      $('#clearData').onclick = clearData;
+      $('#exportData').onclick = exportData;
+
+      $('#globalSearch').addEventListener('input', e=>{ const q = e.target.value.trim().toLowerCase(); if(!q) return renderLists(); // simple filter
+        // filter users/channels
+        const chList = $('#channelsList'); chList.innerHTML=''; state.channels.filter(c=>c.name.includes(q)).forEach(c=>{ const el = document.createElement('div'); el.className='channel'; el.textContent = c.name; el.onclick = ()=> setActiveChannel(c.name); chList.appendChild(el); }); const dmList = $('#dmList'); dmList.innerHTML=''; state.users.filter(u=> (u.username+ (u.display||'')).toLowerCase().includes(q)).forEach(u=>{ const el = document.createElement('div'); el.className='person'; el.innerHTML = `<div class="avatar">${(u.display||u.username)[0].toUpperCase()}</div><div style="flex:1"><div style="font-weight:600">${u.display||u.username}</div><div class="tag">@${u.username}</div></div>`; el.onclick = ()=> openDM(u.username); dmList.appendChild(el); });
+      });
+
+      // keyboard: press Ctrl+K to focus search
+      window.addEventListener('keydown', e=>{ if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); $('#globalSearch').focus(); } });
+    }
+
+    // init
+    if(!state.channels || state.channels.length===0) state.channels = seed().channels;
+    if(!state.messages) state.messages = [];
+
+    renderAll(); wire();
+
+    // expose some helpers for debugging in console
+    window.DC = { state, save:()=>save(state), seed, export: exportData };
+  </script>
+</body>
+</html>
